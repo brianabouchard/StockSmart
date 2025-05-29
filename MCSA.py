@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import smtplib
+from termcolor import colored
 from dotenv import load_dotenv
 from selenium import webdriver
 from email.mime.text import MIMEText
@@ -10,7 +11,15 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 
-def set_store_cookie(driver):
+# Dictionary of product name to URL
+PRODUCTS = {
+    "Astral 5090 OC": "https://www.microcenter.com/product/690032/asus-nvidia-geforce-rtx-5090-rog-astral-overclocked-triple-fan-32gb-gddr7-pcie-50-graphics-card",
+    "Astral 5090": "https://www.microcenter.com/product/690036/asus-nvidia-geforce-rtx-5090-rog-astral-triple-fan-32gb-gddr7-pcie-50-graphics-card",
+    "TUF 5090 OC": "https://www.microcenter.com/product/690033/asus-nvidia-geforce-rtx-5090-tuf-gaming-overclocked-triple-fan-32gb-gddr7-pcie-50-graphics-card",
+    "TUF 5090": "https://www.microcenter.com/product/690037/asus-nvidia-geforce-rtx-5090-tuf-gaming-triple-fan-32gb-gddr7-pcie-50-graphics-card"
+}
+
+def set_store_cookie(driver, url):
     # Get the main store page URL so you don't overload the product webpage. Selenium limitation
     driver.get("https://www.microcenter.com")
 
@@ -27,7 +36,7 @@ def set_store_cookie(driver):
         'httpOnly': False
     })
     # Get the product page URL
-    driver.get("https://www.microcenter.com/product/687907/amd-ryzen-7-9800x3d-granite-ridge-am5-470ghz-8-core-boxed-processor-heatsink-not-included")
+    driver.get(url)
 
     # Wait for the page to load, adjust as needed (seconds)
     time.sleep(0)
@@ -38,6 +47,7 @@ def prompt():
           "Your personal information can only be accessed by a system administrator while the program is running.\n"
           "This information cannot be accessed by outside users and is immediately deleted upon the end of program runtime.\n"
           "This means that you will have to re-enter your information every time the program is ran.\n"
+          "Alternatively, you may bypass this step by hitting return twice on your keyboard.\n"
           "\n"
           "Email Information Instructions:\n"
           "Go to myaccount.google.com, search 'App Passwords', and click the respective option.\n"
@@ -80,7 +90,7 @@ def test_email():
         print(f"Failed to send test email: {e}")
         print("Application will continue without user email")
 
-def send_email():
+def send_email(product_name, product_url):
     try:
         # Get the environment variables
         email_user = os.getenv("email")
@@ -94,8 +104,8 @@ def send_email():
         msg = MIMEMultipart()
         msg['From'] = email_user
         msg['To'] = email_user
-        msg['Subject'] = 'Your Microcenter Product is Now In Stock'
-        msg.attach(MIMEText('Your product is in stock. Reserve it online or head to the store to get it while supplies last.','plain'))
+        msg['Subject'] = f'{product_name} is in Stock at Microcenter!'
+        msg.attach(MIMEText(f'Your product "{product_name}" is in stock!\n\n{product_url}', 'plain'))
 
         # Connect to the email server and send the email
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
@@ -109,21 +119,22 @@ def send_email():
     except Exception as e:
         print(f"Failed to send email: {e}")
 
-def check_stock(driver):
+def check_stock(driver, product_name, url):
     # Set the store cookie to Dallas (storeSelected: 131)
-    set_store_cookie(driver)
+    set_store_cookie(driver, url)
 
     # Get the page source (HTML)
     page_source = driver.page_source
 
     # Search for 'inStock': 'False' in the page source
     if "'inStock':'True'" in page_source:
-        print("In Stock!")
-        send_email()
+        print(colored(f"{product_name}: IN STOCK!", 'green', attrs=['reverse', 'blink']))
+        send_email(product_name, url)
         driver.quit()  # Close the browser
-        sys.exit()
+        return True
     else:
-        print("Out of Stock!")
+        print(colored(f"{product_name}: Out of Stock", 'red'))
+        return False
 
 def main():
     # Enter email and password
@@ -148,8 +159,14 @@ def main():
         # Set up the WebDriver with the specified options
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-        # Call the function to check stock
-        check_stock(driver)  # Check stock status once
+        try:
+            for name, url in PRODUCTS.items():
+                check_stock(driver, name, url)
+        finally:
+            driver.quit()
+
+        print("Waiting for next check...\n")
+
         time.sleep(300) # Change the number to check stock sooner/faster (seconds). Default: checks stock every ~5 minutes
 
 main()
